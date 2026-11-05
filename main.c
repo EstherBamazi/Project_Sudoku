@@ -1,47 +1,94 @@
 #include "Sudoku.h"
-#include <ctype.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 
-/* Lit une ligne complete, en rejetant proprement les lignes trop longues. */
-static int lireLigne(char texte[], int capacite)
+/* Espace, tabulation ou retour chariot (fins de ligne Windows). */
+int estEspace(char caractere)
 {
-    if (!fgets(texte, capacite, stdin)) return 0;
-    if (!strchr(texte, '\n') && !feof(stdin)) {
-        int c;
-        while ((c = getchar()) != '\n' && c != EOF) {}
+    if (caractere == ' ' || caractere == '\t' || caractere == '\r') {
+        return 1;
+    }
+    return 0;
+}
+
+/* Retour : 1 = ligne lue, 0 = fin de saisie, -1 = ligne refusee. */
+int lireLigne(char texte[], int capacite)
+{
+    int position = 0;
+    int invalide = 0;
+    /* getchar renvoie un int : il faut pouvoir reconnaitre EOF. */
+    int caractere = getchar();
+    if (caractere == EOF) {
+        return 0;
+    }
+
+    while (caractere != '\n' && caractere != EOF) {
+        if (caractere == '\0') {
+            invalide = 1; /* Ne pas accepter une fin de chaine cachee. */
+        }
+        if (position < capacite - 1) {
+            texte[position] = (char)caractere;
+            position++;
+        } else {
+            invalide = 1;
+        }
+        /* Meme si la ligne est trop longue, lire jusqu'a sa fin. */
+        caractere = getchar();
+    }
+    texte[position] = '\0';
+    if (invalide) {
         texte[0] = '\0';
+        return -1;
     }
     return 1;
 }
 
-/* Accepte exactement nombre entiers entre 1 et 9, separes par des espaces. */
-static int lireEntiers(char *texte, int valeurs[], int nombre)
+/* Accepte exactement nombre chiffres de 1 a 9 separes par des espaces. */
+int lireEntiers(char texte[], int valeurs[], int nombre)
 {
+    int position = 0;
     for (int i = 0; i < nombre; i++) {
-        while (isspace((unsigned char)*texte)) texte++;
-        char *fin;
-        errno = 0;
-        long valeur = strtol(texte, &fin, 10);
-        if (fin == texte || errno || valeur < 1 || valeur > 9) return 0;
-        if (*fin && !isspace((unsigned char)*fin)) return 0;
-        valeurs[i] = (int)valeur;
-        texte = fin;
+        while (estEspace(texte[position])) {
+            position++;
+        }
+        if (texte[position] < '1' || texte[position] > '9') {
+            return 0;
+        }
+        /* Exemple : le caractere '7' devient l'entier 7. */
+        valeurs[i] = texte[position] - '0';
+        position++;
+        if (texte[position] != '\0' && !estEspace(texte[position])) {
+            return 0;
+        }
     }
-    while (isspace((unsigned char)*texte)) texte++;
-    return *texte == '\0';
+    while (estEspace(texte[position])) {
+        position++;
+    }
+    if (texte[position] != '\0') {
+        return 0;
+    }
+    return 1;
 }
 
-static int commande(char *texte, int lettre)
+/* Accepte la commande seule, en minuscule ou en majuscule. */
+int commande(char texte[], char minuscule, char majuscule)
 {
-    while (isspace((unsigned char)*texte)) texte++;
-    if (tolower((unsigned char)*texte) != lettre) return 0;
-    texte++;
-    while (isspace((unsigned char)*texte)) texte++;
-    return *texte == '\0';
+    int position = 0;
+    while (estEspace(texte[position])) {
+        position++;
+    }
+    if (texte[position] != minuscule && texte[position] != majuscule) {
+        return 0;
+    }
+    position++;
+    while (estEspace(texte[position])) {
+        position++;
+    }
+    if (texte[position] != '\0') {
+        return 0;
+    }
+    return 1;
 }
 
 int main(void)
@@ -49,16 +96,24 @@ int main(void)
     int solution[TAILLE][TAILLE], grille[TAILLE][TAILLE], initiale[TAILLE][TAILLE];
     char texte[128];
     int choix[1], coup[3];
+    /* Initialiser une seule fois la suite pseudo-aleatoire. */
     srand((unsigned int)time(NULL));
     puts("SUDOKU : chiffres 1 a 9, sans doublon par ligne, colonne et bloc.");
     puts("Les cases initiales sont protegees. Un faux chiffre coute une erreur.");
     puts("Une saisie mal formee ou une case protegee ne coute aucune erreur.");
-    for (;;) {
+    int niveauValide = 0;
+    while (!niveauValide) {
         printf("Niveau : 1 facile, 2 moyen, 3 difficile : ");
         fflush(stdout);
-        if (!lireLigne(texte, sizeof texte)) return 0;
-        if (lireEntiers(texte, choix, 1) && choix[0] <= 3) break;
-        puts("Choisir 1, 2 ou 3.");
+        int lecture = lireLigne(texte, sizeof texte);
+        if (lecture == 0) {
+            return 0;
+        }
+        if (lecture == 1 && lireEntiers(texte, choix, 1) && choix[0] <= 3) {
+            niveauValide = 1;
+        } else {
+            puts("Choisir 1, 2 ou 3.");
+        }
     }
     puts("Generation en cours...");
     if (!genererPartie(solution, grille, choix[0])) {
@@ -70,29 +125,43 @@ int main(void)
     int erreurs = 0, limite = limites[choix[0] - 1];
     while (!grilleComplete(grille)) {
         afficherGrille(grille);
-        printf("Erreurs : %d/%d. Entrer ligne colonne valeur (ex. 2 4 7), ou q : ", erreurs, limite);
+        printf("Erreurs : %d/%d. Entrer ligne colonne valeur sur une seule ligne (ex. 2 4 7), ou q : ", erreurs, limite);
         fflush(stdout);
-        if (!lireLigne(texte, sizeof texte)) { puts("\nFin de saisie."); return 0; }
-        if (commande(texte, 'q')) {
+        int lecture = lireLigne(texte, sizeof texte);
+        if (lecture == 0) {
+            puts("\nFin de saisie.");
+            return 0;
+        }
+        if (commande(texte, 'q', 'Q')) {
             printf("Confirmer l'abandon ? o/n : ");
             fflush(stdout);
-            if (!lireLigne(texte, sizeof texte)) return 0;
-            if (commande(texte, 'o')) { puts("Partie abandonnee."); return 0; }
+            if (lireLigne(texte, sizeof texte) == 0) {
+                return 0;
+            }
+            if (commande(texte, 'o', 'O')) {
+                puts("Partie abandonnee.");
+                return 0;
+            }
             continue;
         }
         if (!lireEntiers(texte, coup, 3)) {
-            puts("Entrer exactement trois entiers de 1 a 9.");
+            puts("Entrer trois chiffres de 1 a 9 separes par des espaces, puis Entree.");
             continue;
         }
         int resultat = jouerCoup(grille, initiale, solution, coup[0] - 1, coup[1] - 1, coup[2]);
-        if (resultat == -2) puts("Cette case initiale est protegee.");
-        else if (resultat == 0) {
+        if (resultat == -2) {
+            puts("Cette case initiale est protegee.");
+        } else if (resultat == 0) {
             erreurs++;
             puts("Ce chiffre ne correspond pas a la solution.");
-            if (erreurs == limite) { puts("Defaite : limite d'erreurs atteinte."); return 0; }
+            if (erreurs == limite) {
+                puts("Defaite : limite d'erreurs atteinte.");
+                return 0;
+            }
         }
     }
     afficherGrille(grille);
     puts("Victoire ! La grille est complete et valide.");
     return 0;
 }
+
