@@ -1,5 +1,51 @@
-﻿cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.16)
 project(Sudoku C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-add_executable(sudoku main.c Sudoku.c)
+set(CMAKE_C_EXTENSIONS OFF)
+
+option(SUDOKU_AVEC_SDL "Compiler l'interface graphique SDL2" OFF)
+add_executable(sudoku main.c Sudoku.c partie.c joueur.c)
+
+if(MSVC)
+    target_compile_options(sudoku PRIVATE /W4)
+else()
+    target_compile_options(sudoku PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if(SUDOKU_AVEC_SDL)
+    find_package(SDL2 2.0 CONFIG REQUIRED)
+    target_sources(sudoku PRIVATE interfaceSDL.c)
+    target_compile_definitions(sudoku PRIVATE SUDOKU_AVEC_SDL)
+    target_link_libraries(sudoku PRIVATE SDL2::SDL2)
+    # Windows doit trouver SDL2.dll a cote de l'executable.
+    if(WIN32)
+        add_custom_command(TARGET sudoku POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:SDL2::SDL2> $<TARGET_FILE_DIR:sudoku>)
+    endif()
+endif()
+
+# Les tests sont facultatifs et ne changent pas le programme livre.
+option(BUILD_TESTING "Compiler les tests du projet" OFF)
+if(BUILD_TESTING)
+    enable_testing()
+    add_executable(test_moteur tests/test_moteur.c Sudoku.c)
+    add_executable(test_partie tests/test_partie.c partie.c Sudoku.c)
+    add_executable(test_saisie tests/test_saisie.c joueur.c partie.c Sudoku.c)
+    foreach(test_cible test_moteur test_partie test_saisie)
+        target_include_directories(${test_cible} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        if(MSVC)
+            target_compile_options(${test_cible} PRIVATE /UNDEBUG)
+        else()
+            target_compile_options(${test_cible} PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
+        endif()
+        add_test(NAME ${test_cible} COMMAND ${test_cible})
+    endforeach()
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME console COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/verifier_console.py $<TARGET_FILE_DIR:sudoku>)
+        set_tests_properties(console PROPERTIES TIMEOUT 90)
+    endif()
+endif()

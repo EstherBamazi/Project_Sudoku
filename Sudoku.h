@@ -21,3 +21,4 @@ int jouerCoup(int grille[TAILLE][TAILLE], int initiale[TAILLE][TAILLE],
 void afficherGrille(int grille[TAILLE][TAILLE]);
 
 #endif
+
